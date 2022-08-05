@@ -8,4 +8,4 @@ edition = "2021"
 [dependencies]
 aether = { path = "../aether" }
 winit = "0.27.0"
-ash = "0.37.0+1.3.209"
+ash = "0.37.0"

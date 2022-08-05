@@ -1,51 +1,37 @@
-use crate::vulkan::{device::{Device}, instance::{PhysicalDevice, Instance}};
-use ash::prelude::VkResult;
+use crate::vulkan::{
+    device::{Device, Swapchain},
+    instance::Instance,
+};
 
-#[cfg(target_os = "windows")]
-use ash::extensions::khr::Win32Surface;
-#[cfg(target_os = "linux")]
-use ash::extensions::khr::XlibSurface;
-
-use ash::extensions::khr::Surface;
-
-#[cfg(target_os = "windows")]
-fn required_extensions() -> Vec<*const i8> {
-    vec![
-        Win32Surface::name().as_ptr(),
-        Surface::name().as_ptr()
-    ]
-}
-
-#[cfg(target_os = "linux")]
-fn required_extensions() -> Vec<*const i8> {
-    vec![
-        XlibSurface::name().as_ptr(),
-        Surface::name().as_ptr()
-    ]
-}
+use ash::{prelude::VkResult};
 
 pub struct Context {
     entry: ash::Entry,
-    instance: ash::Instance,
-    physical: PhysicalDevice,
-    device: ash::Device
+    instance: Instance,
+    surface: ash::vk::SurfaceKHR,
+    device: Device,
+    swapchain: Swapchain
 }
 
 impl Context {
-    pub fn new() -> VkResult<Context> {
+    pub fn new(window: &winit::window::Window) -> VkResult<Context> {
         let layers = ["VK_LAYER_KHRONOS_validation"];
-        let extensions = required_extensions();
 
         let entry = unsafe { ash::Entry::load().unwrap() };
-        let instance = ash::Instance::create(&entry, extensions, &layers)?;
-        let physical = instance.pick_physical_device().expect("No suitable device found");
-        let device = ash::Device::create(&instance, &physical, vec![], &layers)?;
+        let instance = Instance::new(&entry, &layers)?;
+        let surface = instance.create_surface(window)?;
+        let physical = instance
+            .pick_physical_device(&surface)
+            .expect("No suitable device found");
+        let device = Device::new(&instance, physical, &layers)?;
+        let swapchain = device.create_swapchain(&surface, window)?;
 
         Ok(Context {
             entry,
             instance,
-            physical,
-            device
+            surface,
+            device,
+            swapchain
         })
     }
 }
