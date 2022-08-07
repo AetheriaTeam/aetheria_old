@@ -1,4 +1,4 @@
-use std::{ffi::CString, ops::Deref, collections::HashSet};
+use std::{collections::HashSet, error::Error, ffi::CString, fmt::Display, ops::Deref};
 
 use ash::extensions::khr::Surface;
 #[cfg(target_os = "windows")]
@@ -7,44 +7,78 @@ use ash::extensions::khr::Win32Surface;
 use ash::extensions::khr::XlibSurface;
 use ash::{prelude::VkResult, vk};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
 pub struct QueueFamilies {
+    pub graphics: u32,
+    pub present: u32,
+}
+
+impl QueueFamilies {
+    #[must_use]
+    pub fn to_vec(&self) -> Vec<u32> {
+        vec![self.graphics, self.present]
+    }
+
+    #[must_use]
+    pub fn get_unique_families(&self) -> HashSet<u32> {
+        let families = self.to_vec();
+        let mut set: HashSet<u32> = HashSet::new();
+        for family in &families {
+            set.insert(*family);
+        }
+        set
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PartialQueueFamilies {
     pub graphics: Option<u32>,
     pub present: Option<u32>,
 }
 
-impl QueueFamilies {
-    fn new() -> Self {
-        QueueFamilies {
+impl PartialQueueFamilies {
+    const fn new() -> Self {
+        Self {
             graphics: None,
             present: None,
         }
     }
 
-    pub fn is_complete(&self) -> bool {
+    #[must_use]
+    pub const fn is_complete(&self) -> bool {
         self.graphics.is_some() && self.present.is_some()
     }
+}
 
-    pub fn to_vec(&self) -> Option<Vec<u32>> {
-        if self.is_complete() {
-            Some(vec![self.graphics.unwrap(), self.present.unwrap()])
-        } else {
-            None
-        }
+#[derive(Debug, Clone)]
+pub struct IncompleteQueueFamiliesError {
+    partial_families: PartialQueueFamilies,
+}
+impl Error for IncompleteQueueFamiliesError {}
+
+impl Display for IncompleteQueueFamiliesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.partial_families.graphics.is_none() {
+            write!(f, "Missing graphcis queue")?;
+        };
+        if self.partial_families.present.is_none() {
+            write!(f, "Missing present queue")?;
+        };
+        Ok(())
     }
+}
 
-    pub fn get_unique_families(&self) -> Option<HashSet<u32>> {
-        let families = self.to_vec();
-        match families {
-            Some(families) => {
-                let mut set: HashSet<u32> = HashSet::new();
-                for family in families.iter() {
-                    set.insert(*family);
-                }
-                Some(set)
-            },
-            None => None
-        }
+impl TryFrom<PartialQueueFamilies> for QueueFamilies {
+    type Error = IncompleteQueueFamiliesError;
+
+    fn try_from(partial_families: PartialQueueFamilies) -> Result<Self, Self::Error> {
+        let err = IncompleteQueueFamiliesError {
+            partial_families: partial_families.clone(),
+        };
+        Ok(Self {
+            graphics: partial_families.graphics.ok_or_else(|| err.clone())?,
+            present: partial_families.present.ok_or(err)?,
+        })
     }
 }
 
@@ -52,20 +86,35 @@ impl QueueFamilies {
 pub struct SwapchainSupportInfo {
     pub capabilities: vk::SurfaceCapabilitiesKHR,
     pub formats: Vec<vk::SurfaceFormatKHR>,
-    pub modes: Vec<vk::PresentModeKHR>
+    pub modes: Vec<vk::PresentModeKHR>,
 }
 
 impl SwapchainSupportInfo {
-    pub fn new(instance: &Instance, physical: &vk::PhysicalDevice, surface: &vk::SurfaceKHR) -> VkResult<SwapchainSupportInfo> {
+    #[doc = "# Errors"]
+    #[doc = "Errors if an internal ash function fails"]
+    pub fn new(
+        instance: &Instance,
+        physical: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
+    ) -> VkResult<Self> {
         unsafe {
-            let capabilities = instance.extensions.surface.get_physical_device_surface_capabilities(*physical, *surface)?;
-            let formats = instance.extensions.surface.get_physical_device_surface_formats(*physical, *surface)?;
-            let modes = instance.extensions.surface.get_physical_device_surface_present_modes(*physical, *surface)?;
+            let capabilities = instance
+                .extensions
+                .surface
+                .get_physical_device_surface_capabilities(*physical, *surface)?;
+            let formats = instance
+                .extensions
+                .surface
+                .get_physical_device_surface_formats(*physical, *surface)?;
+            let modes = instance
+                .extensions
+                .surface
+                .get_physical_device_surface_present_modes(*physical, *surface)?;
 
-            Ok(SwapchainSupportInfo {
+            Ok(Self {
                 capabilities,
                 formats,
-                modes
+                modes,
             })
         }
     }
@@ -75,16 +124,16 @@ impl SwapchainSupportInfo {
 pub struct PhysicalDevice {
     pub handle: vk::PhysicalDevice,
     pub families: QueueFamilies,
-    pub swapchain: SwapchainSupportInfo
+    pub swapchain: SwapchainSupportInfo,
 }
 
-pub struct InstanceExtensions {
+pub struct Extensions {
     pub surface: ash::extensions::khr::Surface,
     pub win32_surface: Option<ash::extensions::khr::Win32Surface>,
     pub xlib_surface: Option<ash::extensions::khr::XlibSurface>,
 }
 
-impl InstanceExtensions {
+impl Extensions {
     #[cfg(target_os = "windows")]
     fn get_names() -> Vec<*const i8> {
         vec![Surface::name().as_ptr(), Win32Surface::name().as_ptr()]
@@ -96,8 +145,8 @@ impl InstanceExtensions {
     }
 
     #[cfg(target_os = "windows")]
-    fn load(entry: &ash::Entry, instance: &ash::Instance) -> InstanceExtensions {
-        InstanceExtensions {
+    fn load(entry: &ash::Entry, instance: &ash::Instance) -> Extensions {
+        Extensions {
             surface: ash::extensions::khr::Surface::new(entry, instance),
             win32_surface: Some(ash::extensions::khr::Win32Surface::new(entry, instance)),
             xlib_surface: None,
@@ -105,8 +154,8 @@ impl InstanceExtensions {
     }
 
     #[cfg(target_os = "linux")]
-    fn load(entry: &ash::Entry, instance: &ash::Instance) -> InstanceExtensions {
-        InstanceExtensions {
+    fn load(entry: &ash::Entry, instance: &ash::Instance) -> Self {
+        Self {
             surface: ash::extensions::khr::Surface::new(entry, instance),
             win32_surface: None,
             xlib_surface: Some(ash::extensions::khr::XlibSurface::new(entry, instance)),
@@ -116,11 +165,13 @@ impl InstanceExtensions {
 
 pub struct Instance {
     pub handle: ash::Instance,
-    pub extensions: InstanceExtensions,
+    pub extensions: Extensions,
 }
 
 impl Instance {
-    pub fn new(entry: &ash::Entry, layers: &[&str]) -> VkResult<Instance> {
+    #[doc = "# Panics"]
+    #[doc = "Panics if a layer name couldn't be converted to a CString"]
+    pub fn new(entry: &ash::Entry, layers: &[&str]) -> VkResult<Self> {
         let app_info = vk::ApplicationInfo {
             api_version: vk::make_api_version(0, 1, 3, 0),
             ..Default::default()
@@ -128,11 +179,14 @@ impl Instance {
 
         let layers_cstr: Vec<CString> = layers
             .iter()
-            .map(|layer| CString::new(*layer).unwrap())
+            .map(|layer| match CString::new(*layer) {
+                Ok(cstr) => cstr,
+                Err(e) => panic!("Couldn't convert {} to a CString because {}", layer, e),
+            })
             .collect();
         let layers_ptrs: Vec<*const i8> = layers_cstr.iter().map(|str| str.as_ptr()).collect();
 
-        let extension_names = InstanceExtensions::get_names();
+        let extension_names = Extensions::get_names();
 
         let instance_builder = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
@@ -140,47 +194,63 @@ impl Instance {
             .enabled_layer_names(&layers_ptrs);
 
         let handle = unsafe { entry.create_instance(&instance_builder, None)? };
-        let extensions = InstanceExtensions::load(entry, &handle);
+        let extensions = Extensions::load(entry, &handle);
 
         println!("Vulkan instance created");
 
-        Ok(Instance { handle, extensions })
+        Ok(Self { handle, extensions })
     }
 
+    #[must_use]
+    #[doc = "# Panics"]
+    #[doc = "Panics if internal ash functions fail or if the number of physical devices is greater that [`u32::MAX`] (good luck installing 4,294,967,295 GPUs into your machine)"]
     pub fn pick_physical_device(&self, surface: &vk::SurfaceKHR) -> Option<PhysicalDevice> {
         let physicals = unsafe {
-            self.enumerate_physical_devices()
-                .expect("Failed to get physical devices")
+            match self.enumerate_physical_devices() {
+                Ok(value) => value,
+                Err(e) => panic!("Failed to get physical devices because {}", e),
+            }
         };
 
-        for physical in physicals.iter() {
+        for physical in &physicals {
             let family_properties =
                 unsafe { self.get_physical_device_queue_family_properties(*physical) };
-            let mut families = QueueFamilies::new();
-            let swapchain_info = SwapchainSupportInfo::new(self, physical, surface).unwrap();
+            let mut partial_families = PartialQueueFamilies::new();
+            let swapchain_info = match SwapchainSupportInfo::new(self, physical, surface) {
+                Ok(value) => value,
+                Err(e) => panic!("Failed to get swapchain support info because {}", e),
+            };
 
-            for (i, family) in family_properties.iter().enumerate() {
+            for (i_usize, family) in family_properties.iter().enumerate() {
+                let i: u32 = match i_usize.try_into() {
+                    Ok(value) => value,
+                    Err(e) => panic!("Unable to cast i into u32 because {}", e)
+                };
+
                 if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                    families.graphics = Some(i as u32);
+                    partial_families.graphics = Some(i);
                 }
 
-                if unsafe {
+                if match unsafe {
                     self.extensions
                         .surface
-                        .get_physical_device_surface_support(*physical, i as u32, *surface)
-                        .unwrap()
+                        .get_physical_device_surface_support(*physical, i, *surface)
                 } {
-                    families.present = Some(i as u32);
+                    Ok(value) => value,
+                    Err(e) => panic!("Failed to get queue family surface support because {}", e)
+                } {
+                    partial_families.present = Some(i);
                 }
             }
 
-            let swapchain_supported = !swapchain_info.formats.is_empty() && !swapchain_info.modes.is_empty();
+            let swapchain_supported =
+                !swapchain_info.formats.is_empty() && !swapchain_info.modes.is_empty();
 
-            if families.is_complete() && swapchain_supported {
+            if partial_families.is_complete() && swapchain_supported {
                 return Some(PhysicalDevice {
                     handle: *physical,
-                    families,
-                    swapchain: swapchain_info
+                    families: partial_families.try_into().ok()?,
+                    swapchain: swapchain_info,
                 });
             }
         }
@@ -194,21 +264,26 @@ impl Instance {
     }
 
     #[cfg(target_os = "linux")]
+    #[doc = "# Panics"]
+    #[doc = "Panics if [`winit::window::Window::xlib_window()`] or [`winit::window::Window::xlib_display()`] return [`None`]"]
     pub fn create_surface(&self, window: &winit::window::Window) -> VkResult<vk::SurfaceKHR> {
         use winit::platform::unix::WindowExtUnix;
 
-        let display = window.xlib_display().unwrap();
+        let display = match window.xlib_display() {
+            Some(display) => display,
+            None => panic!("Window doesn't have an XLib display")
+        };
 
         let surface_info = vk::XlibSurfaceCreateInfoKHR::builder()
-            .dpy(display as *mut vk::Display)
-            .window(window.xlib_window().unwrap());
-
-        unsafe {
-            self.extensions
-                .xlib_surface
-                .as_ref()
-                .unwrap()
-                .create_xlib_surface(&surface_info, None)
+            .dpy(display.cast())
+            .window(match window.xlib_window() {
+                Some(value) => value,
+                None => panic!("No XLib window")
+            });
+        
+        match self.extensions.xlib_surface.as_ref() {
+            None => panic!("XLib extension not loaded on linux machine, this should be impossible"),
+            Some(ext) => unsafe { ext.create_xlib_surface(&surface_info, None) }
         }
     }
 }

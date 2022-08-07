@@ -1,22 +1,22 @@
 use crate::prelude::*;
-use crate::vulkan::image::{Image, ImageConfig};
+use crate::vulkan::image::{Image, self};
 use crate::vulkan::instance::PhysicalDevice;
 
 use ash::{prelude::VkResult, vk};
 use std::ffi::CString;
 use std::ops::Deref;
 
-pub struct DeviceExtensions {
+pub struct Extensions {
     swapchain: ash::extensions::khr::Swapchain,
 }
 
-impl DeviceExtensions {
-    pub fn get_names() -> Vec<*const i8> {
+impl Extensions {
+    fn get_names() -> Vec<*const i8> {
         vec![ash::extensions::khr::Swapchain::name().as_ptr()]
     }
 
-    pub fn load(instance: &ash::Instance, device: &ash::Device) -> DeviceExtensions {
-        DeviceExtensions {
+    fn load(instance: &ash::Instance, device: &ash::Device) -> Self {
+        Self {
             swapchain: ash::extensions::khr::Swapchain::new(instance, device),
         }
     }
@@ -28,10 +28,12 @@ pub struct Queues {
 }
 
 impl Queues {
-    pub unsafe fn new(physical: &PhysicalDevice, device: &ash::Device) -> Queues {
-        Queues {
-            graphics: device.get_device_queue(physical.families.graphics.unwrap(), 0),
-            present: device.get_device_queue(physical.families.present.unwrap(), 0),
+    fn new(physical: &PhysicalDevice, device: &ash::Device) -> Self {
+        unsafe {
+            Self {
+                graphics: device.get_device_queue(physical.families.graphics, 0),
+                present: device.get_device_queue(physical.families.present, 0),
+            }
         }
     }
 }
@@ -39,7 +41,7 @@ impl Queues {
 pub struct Device {
     pub handle: ash::Device,
     pub physical: PhysicalDevice,
-    pub extensions: DeviceExtensions,
+    pub extensions: Extensions,
     pub queues: Queues,
 }
 
@@ -52,12 +54,14 @@ pub struct Swapchain {
 }
 
 impl Device {
+    #[doc = "# Errors"]
+    #[doc = "Errors if an internal ash function fails"]
     pub fn new(
         instance: &ash::Instance,
         physical: PhysicalDevice,
         layers: &[&str],
-    ) -> VkResult<Device> {
-        let unique_families = physical.families.get_unique_families().unwrap();
+    ) -> VkResult<Self> {
+        let unique_families = physical.families.get_unique_families();
 
         let queue_priorities: [f32; 1] = [1.0];
         let queue_infos: Vec<vk::DeviceQueueCreateInfo> = unique_families
@@ -72,11 +76,14 @@ impl Device {
 
         let layers_cstr: Vec<CString> = layers
             .iter()
-            .map(|layer| CString::new(*layer).unwrap())
+            .map(|layer| match CString::new(*layer) {
+                Err(e) => panic!("Failed to convert {} into a CString due to {}", layer, e),
+                Ok(value) => value,
+            })
             .collect();
         let layers_ptrs: Vec<*const i8> = layers_cstr.iter().map(|str| str.as_ptr()).collect();
 
-        let extension_names = DeviceExtensions::get_names();
+        let extension_names = Extensions::get_names();
 
         let device_info = vk::DeviceCreateInfo::builder()
             .enabled_extension_names(&extension_names)
@@ -84,12 +91,12 @@ impl Device {
             .queue_create_infos(&queue_infos);
 
         let handle = unsafe { instance.create_device(physical.handle, &device_info, None)? };
-        let extensions = DeviceExtensions::load(instance, &handle);
-        let queues = unsafe { Queues::new(&physical, &handle) };
+        let extensions = Extensions::load(instance, &handle);
+        let queues = Queues::new(&physical, &handle);
 
         println!("Vulkan device created");
 
-        Ok(Device {
+        Ok(Self {
             handle,
             physical,
             extensions,
@@ -117,6 +124,8 @@ impl Device {
         }
     }
 
+    #[doc = "# Panics"]
+    #[doc = "Panics if there are no swapchain formats or no present modes"]
     pub fn create_swapchain(
         &self,
         surface: &vk::SurfaceKHR,
@@ -132,12 +141,16 @@ impl Device {
                     && format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
             })
             .collect();
-        let format;
-        if optimal_formats.is_empty() {
-            format = *self.physical.swapchain.formats.first().unwrap();
-        } else {
-            format = **optimal_formats.first().unwrap();
-        }
+        let format = match optimal_formats.first() {
+            Some(value) => **value,
+            None => {
+                // No optimal formats, just choose the first one
+                match self.physical.swapchain.formats.first() {
+                    Some(value) => *value,
+                    None => panic!("No swapchain formats"),
+                }
+            }
+        };
 
         let optimal_modes: Vec<&vk::PresentModeKHR> = self
             .physical
@@ -146,12 +159,11 @@ impl Device {
             .iter()
             .filter(|mode| **mode == vk::PresentModeKHR::MAILBOX)
             .collect();
-        let mode;
-        if optimal_modes.is_empty() {
-            mode = vk::PresentModeKHR::FIFO;
-        } else {
-            mode = **optimal_modes.first().unwrap();
-        }
+        let mode = match optimal_modes.first() {
+            Some(value) => **value,
+            None => vk::PresentModeKHR::FIFO,
+        };
+
         let extent = self.choose_extent(window);
 
         let mut num_images = self.physical.swapchain.capabilities.min_image_count + 1;
@@ -160,8 +172,8 @@ impl Device {
         }
 
         let queues = [
-            self.physical.families.graphics.unwrap(),
-            self.physical.families.present.unwrap(),
+            self.physical.families.graphics,
+            self.physical.families.present,
         ];
 
         let mut swapchain_info = vk::SwapchainCreateInfoKHR::builder()
@@ -196,7 +208,7 @@ impl Device {
         let images: Vec<Image> = image_handles
             .iter()
             .map(move |handle| {
-                let config = ImageConfig {
+                let config = image::Config {
                     existing_handle: Some(*handle),
                     size: math::Size {
                         width: extent.width,
@@ -206,15 +218,17 @@ impl Device {
                     ..Default::default()
                 };
 
-                Image::new(self, config).expect("Image creation failed")
+                match Image::new(self, config) {
+                    Ok(image) => image,
+                    Err(e) => panic!("Swapchain image wrapping failed because {}", e),
+                }
             })
             .collect();
         let views = images
             .iter()
-            .map(move |image| {
-                image
-                    .create_full_view(self, vk::ImageAspectFlags::COLOR)
-                    .expect("Image view creation failed")
+            .map(move |image| match image.create_full_view(self, vk::ImageAspectFlags::COLOR) {
+                Ok(value) => value,
+                Err(e) => panic!("Swapchain image view creation failed because {}", e)
             })
             .collect();
 

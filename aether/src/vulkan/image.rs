@@ -3,34 +3,42 @@ use crate::vulkan::device::Device;
 use ash::{prelude::*, vk};
 
 #[derive(Debug, Default)]
-pub struct ImageConfig {
+pub struct Config {
     pub size: math::Size<u32>,
     pub existing_handle: Option<vk::Image>,
     pub usage: Option<vk::ImageUsageFlags>,
-    pub format: vk::Format
+    pub format: vk::Format,
 }
 
 pub struct Image {
     pub handle: vk::Image,
     pub size: math::Size<u32>,
-    pub format: vk::Format
+    pub format: vk::Format,
 }
 
 impl Image {
-    pub fn new(device: &Device, config: ImageConfig) -> VkResult<Image> {
+    #[doc = "# Panics"]
+    #[doc = "Panics if the config is invalid, i.e no usage or external handle"]
+    pub fn new(device: &Device, config: Config) -> VkResult<Self> {
         // Wrap around existing image handles so swapchain images can have the wrapping
-        if config.existing_handle.is_some() {
-            return Ok(Image {
-                handle: config.existing_handle.unwrap(),
-                size: config.size,
-                format: config.format
-            })
-        }
+        match config.existing_handle {
+            Some(value) => {
+                return Ok(Self {
+                    handle: value,
+                    size: config.size,
+                    format: config.format,
+                })
+            }
+            None => (),
+        };
 
         let image_info = vk::ImageCreateInfo::builder()
-            .usage(config.usage.expect("All images need to have a usage"))
+            .usage(match config.usage {
+                Some(usage) => usage,
+                None => panic!("All images must have a usage")
+            })
             .format(config.format)
-            .extent(config.size.to_extent())
+            .extent(config.size.clone().into())
             .tiling(vk::ImageTiling::LINEAR)
             .samples(vk::SampleCountFlags::TYPE_1)
             .image_type(vk::ImageType::TYPE_2D)
@@ -40,14 +48,20 @@ impl Image {
 
         let handle = unsafe { device.create_image(&image_info, None)? };
 
-        Ok(Image {
+        Ok(Self {
             handle,
             size: config.size,
-            format: config.format
+            format: config.format,
         })
     }
 
-    pub fn create_full_view(&self, device: &Device, aspect: vk::ImageAspectFlags) -> VkResult<vk::ImageView> {
+    #[doc = "# Errors"]
+    #[doc = "Errors if internal ash functions fail"]
+    pub fn create_full_view(
+        &self,
+        device: &Device,
+        aspect: vk::ImageAspectFlags,
+    ) -> VkResult<vk::ImageView> {
         let subresource_range = vk::ImageSubresourceRange::builder()
             .aspect_mask(aspect)
             .level_count(1)
@@ -60,7 +74,7 @@ impl Image {
             .image(self.handle)
             .view_type(vk::ImageViewType::TYPE_2D)
             .subresource_range(*subresource_range);
-    
+
         unsafe { device.create_image_view(&view_info, None) }
     }
 }
