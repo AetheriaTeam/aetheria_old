@@ -4,11 +4,16 @@ use winit::{
     window::WindowBuilder,
 };
 
+use std::path::Path;
+
 fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let _vulkan_ctx = aether::vulkan::Context::new(&window);
+    let vulkan_ctx = aether::vulkan::Context::new(&window).unwrap();
+    let vert_shader = aether::vulkan::Shader::new(&vulkan_ctx, Path::new("assets/shaders/triangle.vert")).unwrap();
+    let frag_shader = aether::vulkan::Shader::new(&vulkan_ctx, Path::new("assets/shaders/triangle.frag"));
+    let vert_stage = vert_shader.get_stage();
 
     event_loop.run(move |event, _, control_flow| {
         control_flow.set_poll();

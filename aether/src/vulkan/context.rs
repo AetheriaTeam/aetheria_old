@@ -3,14 +3,14 @@ use crate::vulkan::{
     instance::Instance,
 };
 
-use ash::{prelude::VkResult};
+use ash::prelude::VkResult;
 
 pub struct Context {
-    entry: ash::Entry,
-    instance: Instance,
-    surface: ash::vk::SurfaceKHR,
-    device: Device,
-    swapchain: Swapchain
+    pub entry: ash::Entry,
+    pub instance: Instance,
+    pub surface: ash::vk::SurfaceKHR,
+    pub device: Device,
+    pub swapchain: Swapchain,
 }
 
 impl Context {
@@ -31,7 +31,7 @@ impl Context {
             instance,
             surface,
             device,
-            swapchain
+            swapchain,
         })
     }
 }

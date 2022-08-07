@@ -1,3 +1,5 @@
+use crate::prelude::*;
+use crate::vulkan::image::{Image, ImageConfig};
 use crate::vulkan::instance::PhysicalDevice;
 
 use ash::{prelude::VkResult, vk};
@@ -43,7 +45,8 @@ pub struct Device {
 
 pub struct Swapchain {
     pub handle: vk::SwapchainKHR,
-    pub images: Vec<vk::Image>,
+    pub images: Vec<Image>,
+    pub views: Vec<vk::ImageView>,
     pub format: vk::SurfaceFormatKHR,
     pub extent: vk::Extent2D,
 }
@@ -189,11 +192,36 @@ impl Device {
                 .swapchain
                 .create_swapchain(&swapchain_info, None)?
         };
-        let images = unsafe { self.extensions.swapchain.get_swapchain_images(handle)? };
+        let image_handles = unsafe { self.extensions.swapchain.get_swapchain_images(handle)? };
+        let images: Vec<Image> = image_handles
+            .iter()
+            .map(move |handle| {
+                let config = ImageConfig {
+                    existing_handle: Some(*handle),
+                    size: math::Size {
+                        width: extent.width,
+                        height: extent.height,
+                    },
+                    format: format.format,
+                    ..Default::default()
+                };
+
+                Image::new(self, config).expect("Image creation failed")
+            })
+            .collect();
+        let views = images
+            .iter()
+            .map(move |image| {
+                image
+                    .create_full_view(self, vk::ImageAspectFlags::COLOR)
+                    .expect("Image view creation failed")
+            })
+            .collect();
 
         Ok(Swapchain {
             handle,
             images,
+            views,
             format,
             extent,
         })

@@ -157,7 +157,7 @@ impl Instance {
             let family_properties =
                 unsafe { self.get_physical_device_queue_family_properties(*physical) };
             let mut families = QueueFamilies::new();
-            let swapchain_info = unsafe { SwapchainSupportInfo::new(self, physical, surface).unwrap() };
+            let swapchain_info = SwapchainSupportInfo::new(self, physical, surface).unwrap();
 
             for (i, family) in family_properties.iter().enumerate() {
                 if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
