@@ -1,15 +1,14 @@
-use bytemuck::{Pod, Zeroable};
 use eyre::Result;
 use std::{collections::HashSet, sync::Arc};
 use vulkano::{
     device::{
-        physical::PhysicalDevice, Device, DeviceCreateInfo, DeviceExtensions, Queue,
-        QueueCreateInfo,
+        physical::{PhysicalDevice, QueueFamily},
+        Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo,
     },
     format::Format,
     image::{ImageUsage, SwapchainImage},
     instance::{Instance, InstanceCreateInfo},
-    swapchain::{ColorSpace, PresentMode, Surface, Swapchain, SwapchainCreateInfo}, pipeline::graphics,
+    swapchain::{ColorSpace, PresentMode, Surface, SurfaceInfo, Swapchain, SwapchainCreateInfo},
 };
 use vulkano_win::VkSurfaceBuild;
 use winit::{event_loop::EventLoop, window::WindowBuilder};
@@ -23,13 +22,6 @@ pub struct Context {
     pub swapchain: Arc<Swapchain<winit::window::Window>>,
     pub images: Vec<Arc<SwapchainImage<winit::window::Window>>>,
 }
-
-#[repr(C)]
-#[derive(Debug, Default, Clone, Pod, Zeroable, Copy)]
-pub struct Vertex {
-    pub position: [f32; 2],
-}
-vulkano::impl_vertex!(Vertex, position);
 
 impl Context {
     #[doc = "# Panics"]
@@ -53,14 +45,11 @@ impl Context {
             khr_swapchain: true,
             ..DeviceExtensions::none()
         };
-        let physical = match PhysicalDevice::enumerate(&instance)
-            .filter(move |physical| {
-                physical
-                    .supported_extensions()
-                    .is_superset_of(&device_extensions)
-            })
-            .next()
-        {
+        let physical = match PhysicalDevice::enumerate(&instance).find(|physical| {
+            physical
+                .supported_extensions()
+                .is_superset_of(&device_extensions)
+        }) {
             Some(physical) => physical,
             None => panic!("No devices supporting vulkan found"),
         };
@@ -69,7 +58,7 @@ impl Context {
 
         let graphics_family = match physical
             .queue_families()
-            .find(|family| family.supports_graphics())
+            .find(QueueFamily::supports_graphics)
         {
             None => panic!("No graphics queues"),
             Some(family) => family,
@@ -94,15 +83,20 @@ impl Context {
             .iter()
             .map(|queue_family| {
                 QueueCreateInfo::family(
-                    physical
+                    match physical
                         .queue_families()
                         .find(|family| family.id() == *queue_family)
-                        .unwrap(),
+                    {
+                        None => {
+                            panic!("Failed to match family id to family, this should be impossible")
+                        }
+                        Some(family) => family,
+                    },
                 )
             })
             .collect();
 
-        let (device, mut queues) = match Device::new(
+        let (device, queues) = match Device::new(
             physical,
             DeviceCreateInfo {
                 queue_create_infos,
@@ -119,44 +113,87 @@ impl Context {
 
         for queue in queues {
             let id = queue.family().id();
-            if id == graphics_family.id() { graphics = Some(queue.clone()); }
-            if id == present_family.id() { present = Some(queue.clone()); }
+            if id == graphics_family.id() {
+                graphics = Some(queue.clone());
+            }
+            if id == present_family.id() {
+                present = Some(queue.clone());
+            }
         }
 
-        let capabilities = physical
-            .surface_capabilities(&surface, Default::default())
-            .unwrap();
-        let formats = physical
-            .surface_formats(&surface, Default::default())
-            .unwrap();
-        let mut modes = physical.surface_present_modes(&surface).unwrap();
+        let (swapchain, images) = Self::create_swapchain(&device, &surface);
 
-        let num_images =
-            (capabilities.min_image_count + 1).min(capabilities.max_image_count.unwrap());
+        Ok(Self {
+            surface,
+            device,
+            graphics: match graphics {
+                None => panic!("No graphics queue found"),
+                Some(queue) => queue,
+            },
+            present: match present {
+                None => panic!("No present queue found"),
+                Some(queue) => queue,
+            },
+            swapchain,
+            images,
+        })
+    }
 
-        let (format, colorspace) = if let Some(format) =
-            formats.iter().find(|(format, colorspace)| {
+    fn create_swapchain(
+        device: &Arc<Device>,
+        surface: &Arc<Surface<winit::window::Window>>,
+    ) -> (
+        Arc<Swapchain<winit::window::Window>>,
+        Vec<Arc<SwapchainImage<winit::window::Window>>>,
+    ) {
+        let capabilities = match device
+            .physical_device()
+            .surface_capabilities(surface, SurfaceInfo::default())
+        {
+            Ok(capabilites) => capabilites,
+            Err(e) => panic!("Failed to get physical device capabilities because {}", e),
+        };
+        let formats = match device
+            .physical_device()
+            .surface_formats(surface, SurfaceInfo::default())
+        {
+            Ok(formats) => formats,
+            Err(e) => panic!("Failed to get surface formats because {}", e),
+        };
+        let mut modes = match device.physical_device().surface_present_modes(surface) {
+            Ok(modes) => modes,
+            Err(e) => panic!("Failed to get surface present modes because {}", e),
+        };
+
+        let mut num_images = capabilities.min_image_count + 1;
+        if let Some(max_images) = capabilities.max_image_count {
+            num_images = num_images.min(max_images);
+        }
+
+        let (format, colorspace) = formats
+            .iter()
+            .find(|(format, colorspace)| {
                 *format == Format::B8G8R8A8_SRGB && *colorspace == ColorSpace::SrgbNonLinear
-            }) {
-            format
-        } else {
-            formats.first().unwrap()
-        };
+            })
+            .map_or_else(
+                || match formats.first() {
+                    Some(format) => format,
+                    None => panic!("No surface formats"),
+                },
+                |format| format,
+            );
 
-        let mode = if let Some(mode) = modes.find(|mode| *mode == PresentMode::Mailbox) {
-            mode
-        } else {
-            PresentMode::Fifo
-        };
+        let mode = modes
+            .find(|mode| *mode == PresentMode::Mailbox)
+            .map_or(PresentMode::Fifo, |mode| mode);
 
         let dimensions = surface.window().inner_size();
-        let composite_alpha = capabilities
-            .supported_composite_alpha
-            .iter()
-            .next()
-            .unwrap();
+        let composite_alpha = match capabilities.supported_composite_alpha.iter().next() {
+            Some(composite_alpha) => composite_alpha,
+            None => panic!("No supported composite alphas"),
+        };
 
-        let (swapchain, images) = Swapchain::new(
+        match Swapchain::new(
             device.clone(),
             surface.clone(),
             SwapchainCreateInfo {
@@ -169,16 +206,9 @@ impl Context {
                 image_usage: ImageUsage::color_attachment(),
                 ..Default::default()
             },
-        )
-        .unwrap();
-
-        Ok(Self {
-            surface,
-            device,
-            graphics: graphics.unwrap(),
-            present: present.unwrap(),
-            swapchain,
-            images,
-        })
+        ) {
+            Ok(value) => value,
+            Err(e) => panic!("Failed to create swapchain because {}", e)
+        }
     }
 }

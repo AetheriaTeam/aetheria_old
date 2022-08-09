@@ -59,7 +59,6 @@ void main() {
     }
 }
 
-// Temp code, allowing expect
 #[allow(clippy::expect_used)]
 fn get_pipeline(
     vulkan_ctx: Context,
@@ -77,19 +76,17 @@ fn get_pipeline(
 
     match GraphicsPipeline::start()
         .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
-        .vertex_shader(vs.entry_point("main").expect("Failed to get entry point of vertex shader"), ())
+        .vertex_shader(vs.entry_point("main").unwrap(), ())
         .input_assembly_state(InputAssemblyState::new())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-        .fragment_shader(fs.entry_point("main").expect("Failed to get entry point of fragment shader"), ())
-        .render_pass(Subpass::from(renderpass, 0).expect("Failed to create subpass info"))
+        .fragment_shader(fs.entry_point("main").unwrap(), ())
+        .render_pass(Subpass::from(renderpass, 0).unwrap())
         .build(vulkan_ctx.device) {
             Ok(pipeline) => pipeline,
             Err(e) => panic!("Failed to create pipeline because {}", e)
         }
 }
 
-// Temporary code, allowing too many lines
-#[allow(clippy::too_many_lines)]
 fn main() {
     let event_loop = EventLoop::new();
 
@@ -157,7 +154,7 @@ fn main() {
                 ..
             } => {
                 recreate_swapchain = true;
-                window_resized = true;
+                window_resized = true
             }
             Event::DeviceEvent {
                 event: DeviceEvent::Key(key),
@@ -173,15 +170,13 @@ fn main() {
                 if recreate_swapchain {
                     recreate_swapchain = false;
                     let dimensions = vulkan_ctx.surface.window().inner_size();
-                    let (new_swapchain, new_images) = match vulkan_ctx
+                    let (new_swapchain, new_images) = vulkan_ctx
                         .swapchain
                         .recreate(SwapchainCreateInfo {
                             image_extent: dimensions.into(),
                             ..vulkan_ctx.swapchain.create_info()
-                        }) {
-                            Ok(value) => value,
-                            Err(e) => panic!("Failed to recreate swapchain due to {}", e)
-                        };
+                        })
+                        .unwrap();
 
                     vulkan_ctx.swapchain = new_swapchain;
                     vulkan_ctx.images = new_images;
@@ -210,57 +205,45 @@ fn main() {
                         recreate_swapchain = true;
                     }
 
-                    let mut builder = match AutoCommandBufferBuilder::primary(
+                    let mut builder = AutoCommandBufferBuilder::primary(
                         vulkan_ctx.device.clone(),
                         vulkan_ctx.graphics.family(),
                         CommandBufferUsage::MultipleSubmit,
-                    ) {
-                        Ok(builder) => builder,
-                        Err(e) => panic!("Failed to create command buffer builder because {}", e)
-                    };
+                    )
+                    .unwrap();
 
-                    let view = match 
-                        ImageView::new_default(vulkan_ctx.images[image_idx].clone()) {
-                            Ok(view) => view,
-                            Err(e) => panic!("Failed to create swapchain image view because {}", e)
-                        };
-                    let framebuffer = match Framebuffer::new(
+                    let view =
+                        ImageView::new_default(vulkan_ctx.images[image_idx].clone()).unwrap();
+                    let framebuffer = Framebuffer::new(
                         renderpass.clone(),
                         FramebufferCreateInfo {
                             attachments: vec![view],
                             ..Default::default()
                         },
-                    ) {
-                        Ok(framebuffer) => framebuffer,
-                        Err(e) => panic!("Failed to create framebuffer due to {}", e)
-                    };
+                    )
+                    .unwrap();
 
                     let pass_begin_info = RenderPassBeginInfo {
                         clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into())],
                         ..RenderPassBeginInfo::framebuffer(framebuffer)
                     };
 
-                    #[allow(clippy::expect_used)]
                     builder
                         .begin_render_pass(pass_begin_info, SubpassContents::Inline)
-                        .expect("Failed to begin render pass")
+                        .unwrap()
                         .bind_pipeline_graphics(pipeline.clone())
                         .bind_vertex_buffers(0, vertex_buffer.clone())
                         .draw(3, 1, 0, 0)
-                        .expect("Failed to draw")
+                        .unwrap()
                         .end_render_pass()
-                        .expect("Failed to end render pass");
+                        .unwrap();
 
-                    let cmd = match builder.build() {
-                        Ok(cmd) => cmd,
-                        Err(e) => panic!("Failed to build command buffer because {}", e)
-                    };
+                    let cmd = builder.build();
 
-                    #[allow(clippy::expect_used)]
                     let execution = vulkano::sync::now(vulkan_ctx.device.clone())
                         .join(aquire_future)
-                        .then_execute(vulkan_ctx.graphics.clone(), cmd)
-                        .expect("Executing draw command buffer failed")
+                        .then_execute(vulkan_ctx.graphics.clone(), cmd.unwrap())
+                        .unwrap()
                         .then_swapchain_present(
                             vulkan_ctx.present.clone(),
                             vulkan_ctx.swapchain.clone(),
@@ -270,9 +253,7 @@ fn main() {
 
                     match execution {
                         Ok(future) => {
-                            if let Err(e) = future.wait(None) {
-                                panic!("Error waiting for command buffer future because {}", e);
-                            }
+                            future.wait(None).unwrap(); // wait for the GPU to finish
                         }
                         Err(FlushError::OutOfDate) => {
                             recreate_swapchain = true;
