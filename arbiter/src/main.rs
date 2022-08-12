@@ -27,7 +27,10 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
 };
 
-use aether::vulkan::{context::Context, vertex::Vertex};
+use aether::{
+    renderer::{material::Material, mesh::Mesh, renderer::Renderer},
+    vulkan::{context::Context, vertex::Vertex},
+};
 
 #[allow(clippy::needless_question_mark)]
 mod vs {
@@ -62,30 +65,39 @@ void main() {
 // Temp code, allowing expect
 #[allow(clippy::expect_used)]
 fn get_pipeline(
-    vulkan_ctx: Context,
+    ctx: Context,
     viewport: Viewport,
     renderpass: Arc<RenderPass>,
 ) -> Arc<GraphicsPipeline> {
-    let vs = match vs::load(vulkan_ctx.device.clone()) {
+    let vs = match vs::load(ctx.device.clone()) {
         Ok(shader) => shader,
-        Err(e) => panic!("Failed to load vertex shader due to {}", e)
+        Err(e) => panic!("Failed to load vertex shader due to {}", e),
     };
-    let fs = match fs::load(vulkan_ctx.device.clone()) {
+    let fs = match fs::load(ctx.device.clone()) {
         Ok(shader) => shader,
-        Err(e) => panic!("Failed to load fragment shader due to {}", e)
+        Err(e) => panic!("Failed to load fragment shader due to {}", e),
     };
 
     match GraphicsPipeline::start()
         .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
-        .vertex_shader(vs.entry_point("main").expect("Failed to get entry point of vertex shader"), ())
+        .vertex_shader(
+            vs.entry_point("main")
+                .expect("Failed to get entry point of vertex shader"),
+            (),
+        )
         .input_assembly_state(InputAssemblyState::new())
         .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-        .fragment_shader(fs.entry_point("main").expect("Failed to get entry point of fragment shader"), ())
+        .fragment_shader(
+            fs.entry_point("main")
+                .expect("Failed to get entry point of fragment shader"),
+            (),
+        )
         .render_pass(Subpass::from(renderpass, 0).expect("Failed to create subpass info"))
-        .build(vulkan_ctx.device) {
-            Ok(pipeline) => pipeline,
-            Err(e) => panic!("Failed to create pipeline because {}", e)
-        }
+        .build(ctx.device)
+    {
+        Ok(pipeline) => pipeline,
+        Err(e) => panic!("Failed to create pipeline because {}", e),
+    }
 }
 
 // Temporary code, allowing too many lines
@@ -93,37 +105,30 @@ fn get_pipeline(
 fn main() {
     let event_loop = EventLoop::new();
 
-    let mut vulkan_ctx = match Context::new(&event_loop) {
+    let mut renderer = match Renderer::new(&event_loop) {
         Ok(value) => value,
-        Err(e) => panic!("Failed to create vulkan context because {}", e),
+        Err(e) => panic!("Failed to create renderer because {}", e),
     };
 
     let vertex1 = Vertex {
         position: [-0.5, -0.5],
     };
     let vertex2 = Vertex {
-        position: [0.0, 0.5],
+        position: [-0.5, 0.5],
     };
     let vertex3 = Vertex {
-        position: [0.5, -0.25],
+        position: [0.5, 0.5],
+    };
+    let vertex4 = Vertex {
+        position: [0.5, -0.5],
     };
 
-    let vertex_buffer = match CpuAccessibleBuffer::from_iter(
-        vulkan_ctx.device.clone(),
-        BufferUsage::vertex_buffer(),
-        false,
-        vec![vertex1, vertex2, vertex3],
-    ) {
-        Err(e) => panic!("Failed to create vertex buffer because {}", e),
-        Ok(buffer) => buffer,
-    };
-
-    let renderpass = vulkano::single_pass_renderpass!(vulkan_ctx.device.clone(),
+    let renderpass = vulkano::single_pass_renderpass!(renderer.ctx.device.clone(),
         attachments: {
             color: {
                 load: Clear,
                 store: Store,
-                format: vulkan_ctx.swapchain.image_format(),
+                format: renderer.ctx.swapchain.image_format(),
                 samples: 1,
             }
         },
@@ -136,10 +141,18 @@ fn main() {
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],
-        dimensions: vulkan_ctx.surface.window().inner_size().into(),
+        dimensions: renderer.ctx.surface.window().inner_size().into(),
         depth_range: 0.0..1.0,
     };
-    let mut pipeline = get_pipeline(vulkan_ctx.clone(), viewport.clone(), renderpass.clone());
+    let mut pipeline = get_pipeline(renderer.ctx.clone(), viewport.clone(), renderpass.clone());
+    let material = Material::new(pipeline.clone());
+    let triangle = Mesh::new(
+        &renderer,
+        vec![vertex1, vertex2, vertex3, vertex4],
+        vec![0, 1, 2, 0, 3, 2],
+        material.clone(),
+    )
+    .unwrap();
 
     let mut recreate_swapchain = false;
     let mut window_resized = false;
@@ -172,30 +185,32 @@ fn main() {
             Event::MainEventsCleared => {
                 if recreate_swapchain {
                     recreate_swapchain = false;
-                    let dimensions = vulkan_ctx.surface.window().inner_size();
-                    let (new_swapchain, new_images) = match vulkan_ctx
-                        .swapchain
-                        .recreate(SwapchainCreateInfo {
+                    let dimensions = renderer.ctx.surface.window().inner_size();
+                    let (new_swapchain, new_images) =
+                        match renderer.ctx.swapchain.recreate(SwapchainCreateInfo {
                             image_extent: dimensions.into(),
-                            ..vulkan_ctx.swapchain.create_info()
+                            ..renderer.ctx.swapchain.create_info()
                         }) {
                             Ok(value) => value,
-                            Err(e) => panic!("Failed to recreate swapchain due to {}", e)
+                            Err(e) => panic!("Failed to recreate swapchain due to {}", e),
                         };
 
-                    vulkan_ctx.swapchain = new_swapchain;
-                    vulkan_ctx.images = new_images;
+                    renderer.ctx.swapchain = new_swapchain;
+                    renderer.ctx.images = new_images;
 
                     if window_resized {
                         window_resized = false;
-                        viewport.dimensions = vulkan_ctx.surface.window().inner_size().into();
-                        pipeline =
-                            get_pipeline(vulkan_ctx.clone(), viewport.clone(), renderpass.clone());
+                        viewport.dimensions = renderer.ctx.surface.window().inner_size().into();
+                        pipeline = get_pipeline(
+                            renderer.ctx.clone(),
+                            viewport.clone(),
+                            renderpass.clone(),
+                        );
                     }
 
                     let (image_idx, suboptimal, aquire_future) =
                         match vulkano::swapchain::acquire_next_image(
-                            vulkan_ctx.swapchain.clone(),
+                            renderer.ctx.swapchain.clone(),
                             None,
                         ) {
                             Ok(r) => r,
@@ -211,19 +226,19 @@ fn main() {
                     }
 
                     let mut builder = match AutoCommandBufferBuilder::primary(
-                        vulkan_ctx.device.clone(),
-                        vulkan_ctx.graphics.family(),
+                        renderer.ctx.device.clone(),
+                        renderer.ctx.graphics.family(),
                         CommandBufferUsage::MultipleSubmit,
                     ) {
                         Ok(builder) => builder,
-                        Err(e) => panic!("Failed to create command buffer builder because {}", e)
+                        Err(e) => panic!("Failed to create command buffer builder because {}", e),
                     };
 
-                    let view = match 
-                        ImageView::new_default(vulkan_ctx.images[image_idx].clone()) {
-                            Ok(view) => view,
-                            Err(e) => panic!("Failed to create swapchain image view because {}", e)
-                        };
+                    let view = match ImageView::new_default(renderer.ctx.images[image_idx].clone())
+                    {
+                        Ok(view) => view,
+                        Err(e) => panic!("Failed to create swapchain image view because {}", e),
+                    };
                     let framebuffer = match Framebuffer::new(
                         renderpass.clone(),
                         FramebufferCreateInfo {
@@ -232,38 +247,26 @@ fn main() {
                         },
                     ) {
                         Ok(framebuffer) => framebuffer,
-                        Err(e) => panic!("Failed to create framebuffer due to {}", e)
+                        Err(e) => panic!("Failed to create framebuffer due to {}", e),
                     };
 
-                    let pass_begin_info = RenderPassBeginInfo {
-                        clear_values: vec![Some([0.0, 0.0, 0.0, 1.0].into())],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer)
-                    };
+                    renderer.new_frame(framebuffer);
+                    renderer.add(triangle.clone());
+                    let command = renderer.end_frame();
 
-                    #[allow(clippy::expect_used)]
-                    builder
-                        .begin_render_pass(pass_begin_info, SubpassContents::Inline)
-                        .expect("Failed to begin render pass")
-                        .bind_pipeline_graphics(pipeline.clone())
-                        .bind_vertex_buffers(0, vertex_buffer.clone())
-                        .draw(3, 1, 0, 0)
-                        .expect("Failed to draw")
-                        .end_render_pass()
-                        .expect("Failed to end render pass");
-
-                    let cmd = match builder.build() {
+                    let cmd = match command.build() {
                         Ok(cmd) => cmd,
-                        Err(e) => panic!("Failed to build command buffer because {}", e)
+                        Err(e) => panic!("Failed to build command buffer because {:?}", e),
                     };
 
                     #[allow(clippy::expect_used)]
-                    let execution = vulkano::sync::now(vulkan_ctx.device.clone())
+                    let execution = vulkano::sync::now(renderer.ctx.device.clone())
                         .join(aquire_future)
-                        .then_execute(vulkan_ctx.graphics.clone(), cmd)
+                        .then_execute(renderer.ctx.graphics.clone(), cmd)
                         .expect("Executing draw command buffer failed")
                         .then_swapchain_present(
-                            vulkan_ctx.present.clone(),
-                            vulkan_ctx.swapchain.clone(),
+                            renderer.ctx.present.clone(),
+                            renderer.ctx.swapchain.clone(),
                             image_idx,
                         )
                         .then_signal_fence_and_flush();

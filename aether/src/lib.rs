@@ -4,6 +4,7 @@
 #![warn(clippy::expect_used)]
 
 pub mod prelude;
+pub mod renderer;
 pub mod vulkan;
 
 #[cfg(test)]
