@@ -5,9 +5,9 @@ use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 
 use crate::vulkan::vertex::Vertex;
 
-use super::{
+use crate::renderer::{
     material::{BindMaterial, Material},
-    renderer::{CommandBufferBuilder, Drawable, Renderer},
+    CommandBufferBuilder, Drawable, Renderer,
 };
 
 #[derive(Clone, Debug)]

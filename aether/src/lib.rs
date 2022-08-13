@@ -3,6 +3,7 @@
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
 
+pub mod fs;
 pub mod prelude;
 pub mod renderer;
 pub mod vulkan;

@@ -3,7 +3,7 @@
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
 
-use std::sync::Arc;
+use std::{sync::Arc, path::Path};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{
@@ -28,8 +28,8 @@ use winit::{
 };
 
 use aether::{
-    renderer::{material::Material, mesh::Mesh, renderer::Renderer},
-    vulkan::{context::Context, vertex::Vertex},
+    renderer::{material::Material, mesh::Mesh, Renderer},
+    vulkan::{context::Context, vertex::Vertex}, fs::aproject::AProject,
 };
 
 #[allow(clippy::needless_question_mark)]
@@ -154,6 +154,8 @@ fn main() {
     )
     .unwrap();
 
+    let project = AProject::new(Path::new("./test.aproject"), String::from("Test Project")).unwrap();
+
     let mut recreate_swapchain = false;
     let mut window_resized = false;
 
@@ -224,15 +226,6 @@ fn main() {
                     if suboptimal {
                         recreate_swapchain = true;
                     }
-
-                    let mut builder = match AutoCommandBufferBuilder::primary(
-                        renderer.ctx.device.clone(),
-                        renderer.ctx.graphics.family(),
-                        CommandBufferUsage::MultipleSubmit,
-                    ) {
-                        Ok(builder) => builder,
-                        Err(e) => panic!("Failed to create command buffer builder because {}", e),
-                    };
 
                     let view = match ImageView::new_default(renderer.ctx.images[image_idx].clone())
                     {

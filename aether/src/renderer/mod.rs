@@ -1,3 +1,6 @@
+pub mod material;
+pub mod mesh;
+
 use crate::{
     renderer::material::{BindMaterial, Material},
     vulkan::{context, vertex::Vertex},
@@ -7,7 +10,7 @@ use std::{rc::Rc, sync::Arc, fmt::Debug};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents},
-    render_pass::{RenderPass, Framebuffer},
+    render_pass::Framebuffer,
 };
 
 pub type CommandBufferBuilder = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
