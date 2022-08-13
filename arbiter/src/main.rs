@@ -3,7 +3,7 @@
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
 
-use std::{sync::Arc, path::Path};
+use std::{path::Path, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{
@@ -28,8 +28,10 @@ use winit::{
 };
 
 use aether::{
+    ecs::Component,
+    fs::aproject::AProject,
     renderer::{material::Material, mesh::Mesh, Renderer},
-    vulkan::{context::Context, vertex::Vertex}, fs::aproject::AProject,
+    vulkan::{context::Context, vertex::Vertex},
 };
 
 #[allow(clippy::needless_question_mark)]
@@ -150,11 +152,18 @@ fn main() {
         &renderer,
         vec![vertex1, vertex2, vertex3, vertex4],
         vec![0, 1, 2, 0, 3, 2],
-        material.clone(),
+        material,
     )
     .unwrap();
 
-    let project = AProject::new(Path::new("./test.aproject"), String::from("Test Project")).unwrap();
+    let mut project =
+        AProject::new(Path::new("./test.aproject"), String::from("Test Project")).unwrap();
+    let entity_id = project.world.new_entity();
+    entity_id.execute(&mut project.world, |entity| {
+        entity.add_component(Component::Tag(String::from("Test entity")));
+        entity.add_component(Component::Position { x: 42.0, y: 31.0 });
+    });
+    project.save(Path::new("./test.aproject")).unwrap();
 
     let mut recreate_swapchain = false;
     let mut window_resized = false;

@@ -1,19 +1,29 @@
-use std::{fs::File, path::Path, io::{BufReader, BufWriter, Write}};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter, Write},
+    path::Path,
+};
 
 use ciborium::{de::from_reader, ser::into_writer};
 use eyre::Context;
 use serde::{Deserialize, Serialize};
 
+use crate::ecs::World;
+
 #[derive(Deserialize, Serialize)]
 pub struct AProject {
     name: String,
+    pub world: World,
 }
 
 impl AProject {
     #[doc = "# Errors"]
     #[doc = "Errors if saving the project fails"]
     pub fn new(path: &Path, name: String) -> eyre::Result<Self> {
-        let project = Self { name };
+        let project = Self {
+            name,
+            world: World::new(),
+        };
         project.save(path)?;
         Ok(project)
     }

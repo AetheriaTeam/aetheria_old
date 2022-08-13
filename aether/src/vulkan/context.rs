@@ -208,7 +208,7 @@ impl Context {
             },
         ) {
             Ok(value) => value,
-            Err(e) => panic!("Failed to create swapchain because {}", e)
+            Err(e) => panic!("Failed to create swapchain because {}", e),
         }
     }
 }

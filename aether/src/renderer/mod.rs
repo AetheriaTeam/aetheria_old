@@ -6,16 +6,19 @@ use crate::{
     vulkan::{context, vertex::Vertex},
 };
 use eyre::Context;
-use std::{rc::Rc, sync::Arc, fmt::Debug};
+use std::{fmt::Debug, rc::Rc, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
-    command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassContents},
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, PrimaryAutoCommandBuffer,
+        RenderPassBeginInfo, SubpassContents,
+    },
     render_pass::Framebuffer,
 };
 
 pub type CommandBufferBuilder = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
 
-pub trait Drawable : Debug {
+pub trait Drawable: Debug {
     #[doc = "# Errors"]
     #[doc = "Errors if drawing the object fails, either due to vulkan or bad usage"]
     fn draw<'a>(&'a self, cmd: &'a mut CommandBufferBuilder) -> eyre::Result<()>;
@@ -67,20 +70,17 @@ impl Drawable for Triangle {
 impl Renderer {
     #[doc = "# Errors"]
     #[doc = "Errors if [`aether::vulkan::context::Context::new()`] fails"]
-    pub fn new(
-        event_loop: &winit::event_loop::EventLoop<()>,
-    ) -> eyre::Result<Self> {
+    pub fn new(event_loop: &winit::event_loop::EventLoop<()>) -> eyre::Result<Self> {
         Ok(Self {
             ctx: context::Context::new(event_loop)?,
             draw_list: Vec::new(),
-            framebuffer: None
+            framebuffer: None,
         })
     }
 
     pub fn new_frame(&mut self, framebuffer: Arc<Framebuffer>) {
         self.draw_list.clear();
         self.framebuffer = Some(framebuffer);
-        
     }
 
     pub fn add(&mut self, drawable: Rc<dyn Drawable>) {
@@ -98,7 +98,8 @@ impl Renderer {
         let mut cmd: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = &mut command;
         let mut begin_info = RenderPassBeginInfo::framebuffer(self.framebuffer.clone().unwrap());
         begin_info.clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into())];
-        cmd.begin_render_pass(begin_info, SubpassContents::Inline).unwrap();
+        cmd.begin_render_pass(begin_info, SubpassContents::Inline)
+            .unwrap();
 
         for drawable in &self.draw_list {
             drawable.draw(cmd).unwrap();
