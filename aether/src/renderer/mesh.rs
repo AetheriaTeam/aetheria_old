@@ -1,8 +1,10 @@
 use std::{fmt::Debug, rc::Rc, sync::Arc};
 
 use eyre::Context;
+use serde::Serialize;
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 
+use crate::fs::amesh::AMesh;
 use crate::vulkan::vertex::Vertex;
 
 use crate::renderer::{
@@ -23,24 +25,23 @@ impl Mesh {
     #[doc = "Errors if vertex buffer creation failes"]
     pub fn new(
         renderer: &Renderer,
-        vertices: Vec<Vertex>,
-        indices: Vec<u32>,
+        mesh: &AMesh,
         material: Arc<Material>,
     ) -> eyre::Result<Rc<Self>> {
-        let num_vertices = indices.len() as u32;
+        let num_vertices = mesh.indices.len() as u32;
         Ok(Rc::new(Self {
             vertex_buffer: CpuAccessibleBuffer::from_iter(
                 renderer.ctx.device.clone(),
                 BufferUsage::vertex_buffer(),
                 false,
-                vertices,
+                mesh.vertices.clone(),
             )
             .wrap_err("Failed to create vertex buffer for mesh")?,
             index_buffer: CpuAccessibleBuffer::from_iter(
                 renderer.ctx.device.clone(),
                 BufferUsage::index_buffer(),
                 false,
-                indices,
+                mesh.indices.clone(),
             )
             .wrap_err("Failed to create index buffer for mesh")?,
             material,

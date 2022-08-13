@@ -29,7 +29,7 @@ use winit::{
 
 use aether::{
     ecs::Component,
-    fs::aproject::AProject,
+    fs::{amesh::AMesh, aproject::AProject},
     renderer::{material::Material, mesh::Mesh, Renderer},
     vulkan::{context::Context, vertex::Vertex},
 };
@@ -141,21 +141,6 @@ fn main() {
     )
     .unwrap();
 
-    let mut viewport = Viewport {
-        origin: [0.0, 0.0],
-        dimensions: renderer.ctx.surface.window().inner_size().into(),
-        depth_range: 0.0..1.0,
-    };
-    let mut pipeline = get_pipeline(renderer.ctx.clone(), viewport.clone(), renderpass.clone());
-    let material = Material::new(pipeline.clone());
-    let triangle = Mesh::new(
-        &renderer,
-        vec![vertex1, vertex2, vertex3, vertex4],
-        vec![0, 1, 2, 0, 3, 2],
-        material,
-    )
-    .unwrap();
-
     let mut project =
         AProject::new(Path::new("./test.aproject"), String::from("Test Project")).unwrap();
     let entity_id = project.world.new_entity();
@@ -164,6 +149,21 @@ fn main() {
         entity.add_component(Component::Position { x: 42.0, y: 31.0 });
     });
     project.save(Path::new("./test.aproject")).unwrap();
+
+    let mesh_file = AMesh::new(
+        Path::new("./test.amesh"),
+        vec![vertex1, vertex2, vertex3, vertex4],
+        vec![0, 1, 2, 0, 3, 2],
+    ).unwrap();
+
+    let mut viewport = Viewport {
+        origin: [0.0, 0.0],
+        dimensions: renderer.ctx.surface.window().inner_size().into(),
+        depth_range: 0.0..1.0,
+    };
+    let mut pipeline = get_pipeline(renderer.ctx.clone(), viewport.clone(), renderpass.clone());
+    let material = Material::new(pipeline.clone());
+    let mesh = Mesh::new(&renderer, &mesh_file, material).unwrap();
 
     let mut recreate_swapchain = false;
     let mut window_resized = false;
@@ -253,7 +253,7 @@ fn main() {
                     };
 
                     renderer.new_frame(framebuffer);
-                    renderer.add(triangle.clone());
+                    renderer.add(mesh.clone());
                     let command = renderer.end_frame();
 
                     let cmd = match command.build() {
