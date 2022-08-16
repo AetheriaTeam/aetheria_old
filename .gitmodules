@@ -1,0 +1,3 @@
+[submodule "arbiter/assets/models/gltf-sample-models"]
+	path = arbiter/assets/models/gltf-sample-models
+	url = https://github.com/KhronosGroup/gltf-sample-models
