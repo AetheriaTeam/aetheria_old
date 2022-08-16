@@ -5,7 +5,7 @@
 
 use std::{path::Path, sync::Arc};
 use vulkano::{
-    buffer::{BufferUsage, CpuAccessibleBuffer},
+    buffer::{BufferContents, BufferUsage, CpuAccessibleBuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents,
     },
@@ -29,7 +29,7 @@ use winit::{
 
 use aether::{
     ecs::Component,
-    fs::{amesh::AMesh, aproject::AProject},
+    fs::{amesh::AMesh, aproject::AProject, gltf::Gltf},
     renderer::{material::Material, mesh::Mesh, Renderer},
     vulkan::{context::Context, vertex::Vertex},
 };
@@ -41,10 +41,10 @@ mod vs {
         src: "
 #version 450
 
-layout(location = 0) in vec2 position;
+layout(location = 0) in vec3 position;
 
 void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
+    gl_Position = vec4(position, 1.0);
 }"
     }
 }
@@ -112,19 +112,6 @@ fn main() {
         Err(e) => panic!("Failed to create renderer because {}", e),
     };
 
-    let vertex1 = Vertex {
-        position: [-0.5, -0.5],
-    };
-    let vertex2 = Vertex {
-        position: [-0.5, 0.5],
-    };
-    let vertex3 = Vertex {
-        position: [0.5, 0.5],
-    };
-    let vertex4 = Vertex {
-        position: [0.5, -0.5],
-    };
-
     let renderpass = vulkano::single_pass_renderpass!(renderer.ctx.device.clone(),
         attachments: {
             color: {
@@ -150,11 +137,26 @@ fn main() {
     });
     project.save(Path::new("./test.aproject")).unwrap();
 
-    let mesh_file = AMesh::new(
-        Path::new("./test.amesh"),
-        vec![vertex1, vertex2, vertex3, vertex4],
-        vec![0, 1, 2, 0, 3, 2],
-    ).unwrap();
+    let gltf = Gltf::load(Path::new("./assets/AntiqueCamera.glb")).unwrap();
+
+    let vertices = gltf.meshes[0].primitives[0]
+        .attributes
+        .position
+        .get_data(&gltf);
+    println!("{}", vertices.len());
+    let vertices: Vec<Vertex> = vertices
+        .chunks_exact(12)
+        .map(|bytes| {
+            *Vertex::from_bytes(bytes).unwrap()
+        })
+        .collect();
+    let indices = gltf.meshes[0].primitives[0].indices.get_data(&gltf);
+    let indices: Vec<u32> = indices
+        .chunks(2)
+        .map(|bytes| *u16::from_bytes(bytes).unwrap() as u32)
+        .collect();
+
+    let mesh_file = AMesh::new(Path::new("./test.amesh"), vertices, indices).unwrap();
 
     let mut viewport = Viewport {
         origin: [0.0, 0.0],

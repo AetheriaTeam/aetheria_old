@@ -15,4 +15,7 @@ eyre = "0.6.8"
 bytemuck = "1.11.0"
 ciborium = "0.2.0"
 serde = "1.0.143"
+serde_json = "1.0.83"
 uuid = { version = "1.1.2", features = ["v4", "serde"] }
+nalgebra-glm = "0.17.0"
+nalgebra = "0.31.1"

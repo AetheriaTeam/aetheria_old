@@ -7,6 +7,6 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, Default, Clone, Pod, Zeroable, Copy, Deserialize, Serialize)]
 pub struct Vertex {
     #[serde(rename = "p")]
-    pub position: [f32; 2],
+    pub position: [f32; 3],
 }
 vulkano::impl_vertex!(Vertex, position);
