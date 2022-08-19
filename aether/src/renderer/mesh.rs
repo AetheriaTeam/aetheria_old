@@ -2,7 +2,7 @@ use eyre::Context;
 
 use crate::types::mesh::Mesh;
 use crate::renderer::{
-    material::BindMaterial,
+    material::Bind,
     CommandBufferBuilder, Drawable,
 };
 

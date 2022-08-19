@@ -49,7 +49,6 @@ dependencies = [
  "aether",
  "bytemuck",
  "vulkano",
- "vulkano-shaders",
  "winit",
 ]
 

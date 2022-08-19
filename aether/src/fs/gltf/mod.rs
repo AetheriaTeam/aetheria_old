@@ -41,12 +41,14 @@ pub struct Gltf {
 }
 
 impl Gltf {
+    #[doc = "# Errors"]
+    #[doc = "Errors if the GLB failed to decode, or if it invalid based on the specification"]
     pub fn load(path: &Path) -> eyre::Result<Self> {
         let mut buffer = Cursor::new(std::fs::read(path)?);
 
         let magic = buffer.read_u32()?;
         let version = buffer.read_u32()?;
-        let length = buffer.read_u32()?;
+        let _length = buffer.read_u32()?;
 
         ensure!(
             magic == GLB_MAGIC,
@@ -77,8 +79,15 @@ impl Gltf {
             });
         }
 
-        let gltf = Self::load_json_chunk(&chunks.get_chunk(GlbChunkType::Json).unwrap())?;
-        let binary_data = chunks.get_chunk(GlbChunkType::Binary).unwrap();
+        let gltf = Self::load_json_chunk(
+            &chunks
+                .get_chunk(GlbChunkType::Json)
+                .ok_or_else(|| eyre::eyre!("GLB file {} has no JSON chunk", path.display()))?,
+        )?;
+        let binary_data = chunks.get_chunk(GlbChunkType::Binary).ok_or_else(|| eyre::eyre!(
+            "GLB file {} has no binary chunk",
+            path.display()
+        ))?;
 
         Ok(Self {
             gltf,
@@ -96,33 +105,41 @@ impl Gltf {
         &self.buffer[offset..(offset + length)]
     }
 
+    #[must_use]
+    #[doc = "# Panics"]
+    #[doc = "Panics if converting the binary data to vertices and indices fails, or if either are missing from a mesh"]
     pub fn to_meshes(&self) -> Vec<MeshData> {
         self.gltf
             .meshes
             .iter()
-            .map(|mesh| {
+            .flat_map(|mesh| {
                 mesh.primitives
                     .iter()
                     .map(|primitive| {
                         let vertices = self.load_accessor_data(primitive.attributes["POSITION"]);
                         let vertices = vertices
                             .chunks(12)
-                            .map(|bytes| *Vertex::from_bytes(bytes).unwrap())
+                            .map(|bytes| match Vertex::from_bytes(bytes) {
+                                Ok(vertex) => *vertex,
+                                Err(e) => panic!("Failed to turn {:?} into a Vertex due to {:?}", bytes, e)
+                            })
                             .collect();
 
-                        let indices = self.load_accessor_data(primitive.indices.unwrap());
+                        let indices = self.load_accessor_data(match primitive.indices {
+                            Some(indices) => indices,
+                            None => panic!("Aether currently doesn't support glTF meshes without index buffers")
+                        });
                         let indices = indices
                             .chunks(2)
-                            .map(|bytes| *u16::from_bytes(bytes).unwrap() as u32)
+                            .map(|bytes| u32::from(match u16::from_bytes(bytes) {
+                                Ok(index) => *index,
+                                Err(e) => panic!("Failed to turn {:?} into a index due to {:?}", bytes, e)
+                            }))
                             .collect();
-                        MeshData {
-                            vertices,
-                            indices,
-                        }
+                        MeshData { vertices, indices }
                     })
                     .collect::<Vec<MeshData>>()
             })
-            .flatten()
             .collect()
     }
 
@@ -135,8 +152,7 @@ impl Gltf {
             "SCALAR" => 1,
             "VEC2" => 2,
             "VEC3" => 3,
-            "VEC4" => 4,
-            "MAT2" => 4,
+            "VEC4" | "MAT2" => 4,
             "MAT3" => 9,
             "MAT4" => 16,
             _ => panic!(
@@ -146,12 +162,9 @@ impl Gltf {
         };
 
         let component_type = match accessor.component_type {
-            5120 => 1,
-            5121 => 1,
-            5122 => 2,
-            5123 => 2,
-            5125 => 4,
-            5126 => 4,
+            5120 | 5121 => 1,
+            5122 | 5123 => 2,
+            5125 | 5126 => 4,
             _ => panic!(
                 "Invalid glTF accessor component type {}",
                 accessor.component_type

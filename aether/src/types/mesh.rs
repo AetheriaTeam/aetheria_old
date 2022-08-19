@@ -25,6 +25,7 @@ impl Mesh {
         data: &MeshData,
         material: Arc<Material>,
     ) -> eyre::Result<Self> {
+        #[allow(clippy::expect_used)]
         Ok(Self {
             vertex_buffer: CpuAccessibleBuffer::from_iter(
                 ctx.device.clone(),
@@ -41,11 +42,12 @@ impl Mesh {
             )
             .wrap_err("Failed to create index buffer for mesh")?,
             material,
-            num_indices: data.indices.len().try_into().unwrap(),
+            num_indices: data.indices.len().try_into().expect("Failed to convert length of indices into a u32"),
         })
     }
 }
 
+#[allow(clippy::module_name_repetitions)] // Would be really annoying to have a struct called Data
 #[derive(Deserialize, Serialize)]
 pub struct MeshData {
     pub vertices: Vec<Vertex>,

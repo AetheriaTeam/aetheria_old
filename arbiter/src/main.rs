@@ -3,18 +3,10 @@
 #![warn(clippy::unwrap_used)]
 #![warn(clippy::expect_used)]
 
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 use vulkano::{
     image::view::ImageView,
-    pipeline::{
-        graphics::{
-            input_assembly::InputAssemblyState,
-            vertex_input::BuffersDefinition,
-            viewport::{Viewport, ViewportState}, rasterization::{RasterizationState, CullMode},
-        },
-        GraphicsPipeline, StateMode,
-    },
-    render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass},
+    render_pass::{Framebuffer, FramebufferCreateInfo},
     swapchain::{AcquireError, SwapchainCreateInfo},
     sync::{FlushError, GpuFuture},
 };
@@ -28,38 +20,7 @@ use aether::{
     fs::{aproject::AProject, gltf::Gltf},
     renderer::{material::Material, Renderer},
     types::mesh::{Mesh, MeshData},
-    vulkan::{context::Context, vertex::Vertex},
 };
-
-#[allow(clippy::needless_question_mark)]
-mod vs {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        src: "
-#version 450
-
-layout(location = 0) in vec3 position;
-
-void main() {
-    gl_Position = vec4(position, 1.0);
-}"
-    }
-}
-
-#[allow(clippy::needless_question_mark)]
-mod fs {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        src: "
-#version 450
-
-layout(location = 0) out vec4 f_color;
-
-void main() {
-    f_color = vec4(1.0, 0.0, 0.0, 1.0);
-}"
-    }
-}
 
 // Temporary code, allowing too many lines
 #[allow(clippy::too_many_lines)]
@@ -90,11 +51,10 @@ fn main() {
 
     let meshes: Vec<Mesh> = mesh_datas
         .iter()
-        .map(|data| Mesh::from_data(&renderer.ctx, &data, material.clone()).unwrap())
+        .map(|data| Mesh::from_data(&renderer.ctx, data, material.clone()).unwrap())
         .collect();
 
     let mut recreate_swapchain = false;
-    let mut window_resized = false;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -109,7 +69,6 @@ fn main() {
                 ..
             } => {
                 recreate_swapchain = true;
-                window_resized = true;
             }
             Event::DeviceEvent {
                 event: DeviceEvent::Key(key),
@@ -171,7 +130,9 @@ fn main() {
                     };
 
                     renderer.new_frame(framebuffer);
-                    meshes.iter().for_each(|mesh| renderer.add(Box::new(mesh.clone())));
+                    meshes
+                        .iter()
+                        .for_each(|mesh| renderer.add(Box::new(mesh.clone())));
                     let command = renderer.end_frame();
 
                     let cmd = match command.build() {

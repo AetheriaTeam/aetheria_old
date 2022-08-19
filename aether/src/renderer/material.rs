@@ -12,12 +12,12 @@ impl Material {
     }
 }
 
-pub trait BindMaterial {
+pub trait Bind {
     fn bind_material(&mut self, material: Arc<Material>) -> &mut Self;
 }
 
-impl BindMaterial for AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
-    fn bind_material(&mut self, material: Arc<Material>) -> &mut Self {
+impl Bind for AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
+    fn bind_material(&mut self, _material: Arc<Material>) -> &mut Self {
         self
     }
 }

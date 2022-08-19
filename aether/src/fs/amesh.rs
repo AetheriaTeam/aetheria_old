@@ -10,7 +10,11 @@ use eyre::Context;
 use crate::types::mesh::MeshData;
 
 pub trait AMesh : Sized {
+    #[doc = "# Errors"]
+    #[doc = "Errors if file IO fails, or decoding the mesh fails"]
     fn load(path: &Path) -> eyre::Result<Self>;
+    #[doc = "# Errors"]
+    #[doc = "Errors if file IO fails, or encoding the mesh fails"]
     fn save(&self, path: &Path) -> eyre::Result<()>;
 }
 

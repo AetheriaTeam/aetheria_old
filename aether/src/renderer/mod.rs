@@ -2,12 +2,11 @@ pub mod material;
 pub mod mesh;
 
 use crate::{
-    renderer::material::{BindMaterial, Material},
-    types::mesh::Mesh,
+    renderer::material::{Bind, Material},
     vulkan::{context, vertex::Vertex},
 };
 use eyre::Context;
-use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
+use std::{fmt::Debug, rc::Rc, sync::Arc};
 use vulkano::{
     buffer::{BufferUsage, CpuAccessibleBuffer},
     command_buffer::{
@@ -24,7 +23,6 @@ use vulkano::{
     },
     render_pass::{Framebuffer, RenderPass, Subpass},
 };
-use winit::event_loop;
 
 pub type CommandBufferBuilder = AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>;
 
@@ -83,6 +81,7 @@ impl Renderer {
     #[doc = "# Errors"]
     #[doc = "Errors if [`aether::vulkan::context::Context::new()`] fails"]
     pub fn new(event_loop: &winit::event_loop::EventLoop<()>) -> eyre::Result<Self> {
+        #[allow(clippy::needless_question_mark)] // False positive due to macro I have no control over
         mod render_vs {
             vulkano_shaders::shader! {
                 ty: "vertex",
@@ -90,6 +89,7 @@ impl Renderer {
             }
         }
 
+        #[allow(clippy::needless_question_mark)] // See above
         mod render_fs {
             vulkano_shaders::shader! {
                 ty: "fragment",
@@ -123,6 +123,7 @@ impl Renderer {
             Err(e) => panic!("Failed to load fragment shader due to {}", e),
         };
 
+        #[allow(clippy::expect_used)]
         let render_pipeline = match GraphicsPipeline::start()
             .vertex_input_state(BuffersDefinition::new().vertex::<Vertex>())
             .vertex_shader(
@@ -164,16 +165,23 @@ impl Renderer {
         self.draw_list.push(drawable);
     }
 
+    #[doc = "# Panics"]
+    #[doc = "Panics if vulkan functions fail, or if drawing objects fails" ] 
     pub fn end_frame(&mut self) -> CommandBufferBuilder {
-        let mut command = AutoCommandBufferBuilder::primary(
+        let mut command = match AutoCommandBufferBuilder::primary(
             self.ctx.device.clone(),
             self.ctx.graphics.family(),
             CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
+        ) {
+            Ok(command) => command,
+            Err(e) => panic!("Failed to create command buffer builder due to {:?}", e)
+        };
 
-        let mut cmd: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> = &mut command;
-        let mut begin_info = RenderPassBeginInfo::framebuffer(self.framebuffer.clone().unwrap());
+        let cmd = &mut command;
+        let mut begin_info = RenderPassBeginInfo::framebuffer(match self.framebuffer.clone() {
+            Some(framebuffer) => framebuffer,
+            None => panic!("No framebuffer created, you probably haven't called Renderer::begin_frame()")
+        });
         begin_info.clear_values = vec![Some([0.0, 0.0, 0.0, 1.0].into())];
 
         let viewport = Viewport {
@@ -182,16 +190,20 @@ impl Renderer {
             depth_range: 0.0..1.0,
         };
 
+        #[allow(clippy::expect_used)]
         cmd.begin_render_pass(begin_info, SubpassContents::Inline)
-            .unwrap()
+            .expect("Failed to begin render pass")
             .bind_pipeline_graphics(self.render_pipeline.clone())
             .set_viewport(0, [viewport]);
 
         for drawable in &self.draw_list {
-            drawable.draw(cmd).unwrap();
+            if let Err(e) = drawable.draw(cmd) {
+                panic!("Drawing object failed due to {:?}", e);
+            }
         }
 
-        cmd.end_render_pass().unwrap();
+        #[allow(clippy::expect_used)]
+        cmd.end_render_pass().expect("Failed to end render pass");
 
         command
     }
