@@ -6,28 +6,18 @@ use std::{
 
 use ciborium::{de::from_reader, ser::into_writer};
 use eyre::Context;
-use serde::{Deserialize, Serialize};
 
-use crate::vulkan::vertex::Vertex;
+use crate::types::mesh::MeshData;
 
-#[derive(Serialize, Deserialize)]
-pub struct AMesh {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
+pub trait AMesh : Sized {
+    fn load(path: &Path) -> eyre::Result<Self>;
+    fn save(&self, path: &Path) -> eyre::Result<()>;
 }
 
-impl AMesh {
-    #[doc = "# Errors"]
-    #[doc = "Errors if saving the mesh fails"]
-    pub fn new(path: &Path, vertices: Vec<Vertex>, indices: Vec<u32>) -> eyre::Result<Self> {
-        let mesh = Self { vertices, indices };
-        mesh.save(path)?;
-        Ok(mesh)
-    }
-
+impl AMesh for MeshData {
     #[doc = "# Errors"]
     #[doc = "Errors if loading the mesh fails"]
-    pub fn load(path: &Path) -> eyre::Result<Self> {
+    fn load(path: &Path) -> eyre::Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         from_reader(reader).wrap_err("Failed to load .amesh file")
@@ -35,7 +25,7 @@ impl AMesh {
 
     #[doc = "# Errors"]
     #[doc = "Errors if saving the mesh fails"]
-    pub fn save(&self, path: &Path) -> eyre::Result<()> {
+    fn save(&self, path: &Path) -> eyre::Result<()> {
         let file = File::create(path)?;
         let writer = BufWriter::new(file);
         into_writer(self, writer).wrap_err("Failed to save .amesh file")

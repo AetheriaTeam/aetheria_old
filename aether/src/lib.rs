@@ -7,6 +7,7 @@ pub mod ecs;
 pub mod fs;
 pub mod prelude;
 pub mod renderer;
+pub mod types;
 pub mod vulkan;
 
 #[cfg(test)]

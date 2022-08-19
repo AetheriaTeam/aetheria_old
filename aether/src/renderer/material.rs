@@ -1,19 +1,14 @@
 use std::sync::Arc;
 
-use vulkano::{
-    command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer},
-    pipeline::GraphicsPipeline,
-};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 
 #[derive(Clone, Debug)]
-pub struct Material {
-    pipeline: Arc<GraphicsPipeline>,
-}
+pub struct Material {}
 
 impl Material {
     #[must_use]
-    pub fn new(pipeline: Arc<GraphicsPipeline>) -> Arc<Self> {
-        Arc::new(Self { pipeline })
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {})
     }
 }
 
@@ -23,6 +18,6 @@ pub trait BindMaterial {
 
 impl BindMaterial for AutoCommandBufferBuilder<PrimaryAutoCommandBuffer> {
     fn bind_material(&mut self, material: Arc<Material>) -> &mut Self {
-        self.bind_pipeline_graphics(material.pipeline.clone())
+        self
     }
 }

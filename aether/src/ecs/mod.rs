@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{borrow::BorrowMut, fmt::Debug};
+use std::fmt::Debug;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -15,11 +15,13 @@ pub struct EntityID(Uuid);
 pub struct Entity {
     id: EntityID,
     components: Vec<Component>,
+    children: Vec<EntityID>,
 }
 
 impl Entity {
     #[must_use]
-    #[allow(clippy::borrowed_box)]
+    #[allow(unused_variables)] // Weirdly detects the generic T type as an unused variable
+    #[allow(non_snake_case)]
     pub fn get_component<T>(&self) -> Option<&Component> {
         self.components
             .iter()
@@ -43,7 +45,10 @@ pub struct World {
 }
 
 impl EntityID {
-    pub fn execute(&self, world: &mut World, func: fn(&mut Entity)) -> Option<()> {
+    pub fn execute<F>(&self, world: &mut World, func: F) -> Option<()>
+    where
+        F: Fn(&mut Entity),
+    {
         let entity = world
             .entities
             .iter_mut()
@@ -62,11 +67,17 @@ impl World {
         }
     }
 
-    pub fn new_entity(&mut self) -> EntityID {
+    pub fn new_entity(&mut self, parent: Option<EntityID>) -> EntityID {
         let entity = Entity {
             id: EntityID(Uuid::new_v4()),
             components: Vec::new(),
+            children: Vec::new(),
         };
+
+        if let Some(p) = parent {
+            p.execute(self, |e| e.children.push(entity.id));
+        }
+
         let id = entity.id;
         self.entities.push(entity);
         id
